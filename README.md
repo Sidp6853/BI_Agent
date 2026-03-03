@@ -42,7 +42,7 @@ streamlit_app.py — chat interface + tool trace panel
         ↓
 app/agents/bi_agent.py — LangGraph StateGraph
         ↓
-  [llm_node] → Gemini 1.5 Flash with bound tools
+  [llm_node] → Gemini 2.5 Flash with bound tools
         ↓ (if tool call needed)
   [tool_node] → executes tools, logs trace
         ↓ (loops back to llm_node)
