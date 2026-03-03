@@ -27,22 +27,26 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────
 # LLM Setup
 # ─────────────────────────────────────────
-
-
 _model_with_tools = None
 
 def _get_model():
     global _model_with_tools
     if _model_with_tools is None:
+        # read from st.secrets first, fall back to .env locally
+        try:
+            import streamlit as st
+            api_key = st.secrets["GEMINI_API_KEY"]
+        except Exception:
+            api_key = os.getenv("GEMINI_API_KEY")
+
         base_model = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=os.getenv("GEMINI_API_KEY"),
+            model="gemini-2.5-flash",       
+            google_api_key=api_key,
             temperature=0,
             streaming=False
         )
         _model_with_tools = base_model.bind_tools(MONDAY_TOOLS)
     return _model_with_tools
-
 
 # ─────────────────────────────────────────
 # State

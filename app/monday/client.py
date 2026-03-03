@@ -4,20 +4,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import os
-def _get_monday_key():
-    try:
-        import streamlit as st
-        return st.secrets.get("MONDAY_API_KEY") or os.getenv("MONDAY_API_KEY")
-    except Exception:
-        return os.getenv("MONDAY_API_KEY")
 
-MONDAY_API_KEY = _get_monday_key()
 # ─────────────────────────────────────────
 # Auth & Config
 # ─────────────────────────────────────────
 
-MONDAY_API_KEY = os.getenv("MONDAY_API_KEY")
+
+try:
+    import streamlit as st
+    MONDAY_API_KEY = st.secrets["MONDAY_API_KEY"]
+except Exception:
+    MONDAY_API_KEY = os.getenv("MONDAY_API_KEY")
 MONDAY_API_URL = "https://api.monday.com/v2"
 
 HEADERS = {
