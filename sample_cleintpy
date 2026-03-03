@@ -1,0 +1,239 @@
+import os
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+# if not MONDAY_API_KEY:
+#     raise EnvironmentError("MONDAY_API_KEY not found. Check your .env file.")
+
+# ─────────────────────────────────────────
+# Auth & Config
+# ─────────────────────────────────────────
+
+MONDAY_API_KEY = os.getenv("MONDAY_API_KEY")
+MONDAY_API_URL = "https://api.monday.com/v2"
+
+HEADERS = {
+    "Authorization": f"Bearer {MONDAY_API_KEY}",
+    "Content-Type": "application/json",
+    "API-Version": "2025-01"
+}
+
+
+# ─────────────────────────────────────────
+# Core Runner
+# ─────────────────────────────────────────
+
+def run_query(query: str, variables: dict = None) -> dict:
+    """
+    Sends any GraphQL query or mutation to Monday.com API.
+    All other functions in this file use this as the base.
+    """
+    payload = {"query": query}
+    if variables:
+        payload["variables"] = variables
+
+    try:
+        response = requests.post(MONDAY_API_URL, json=payload, headers=HEADERS)
+        response.raise_for_status()
+        result = response.json()
+
+        # Monday.com returns errors inside the JSON even on 200
+        if "errors" in result:
+            raise ValueError(f"Monday.com API error: {result['errors']}")
+
+        return result
+
+    except requests.exceptions.RequestException as e:
+        raise ConnectionError(f"Failed to reach Monday.com API: {str(e)}")
+
+
+# ─────────────────────────────────────────
+# Board Discovery — No hardcoded IDs
+# ─────────────────────────────────────────
+
+def get_all_boards() -> list[dict]:
+    """
+    Fetches all public boards in the workspace.
+    Returns list of { id, name }
+    Used to resolve board names → IDs at runtime.
+    """
+    query = """
+    query {
+      boards(board_kind: public, limit: 50) {
+        id
+        name
+      }
+    }
+    """
+    result = run_query(query)
+    return result["data"]["boards"]
+
+
+def get_board_id_by_name(board_name: str) -> str:
+    """
+    Resolves a board name to its ID at runtime.
+    Raises clearly if board not found.
+    """
+    boards = get_all_boards()
+    for board in boards:
+        if board["name"].lower().strip() == board_name.lower().strip():
+            return board["id"]
+
+    available = [b["name"] for b in boards]
+    raise ValueError(
+        f"Board '{board_name}' not found. "
+        f"Available boards: {available}"
+    )
+
+
+def get_available_boards() -> list[dict]:
+    """
+    Fetches all usable boards at runtime.
+    Ignores system/welcome boards.
+    Returns list of { id, name } for the agent to reason over.
+    """
+    IGNORE_KEYWORDS = ["welcome", "developer"]
+
+    boards = get_all_boards()
+
+    usable = [
+        b for b in boards
+        if not any(kw in b["name"].lower() for kw in IGNORE_KEYWORDS)
+    ]
+
+    if not usable:
+        raise ValueError("No usable boards found in workspace.")
+
+    return usable
+
+
+# ─────────────────────────────────────────
+# Schema Tool — equivalent of df.columns + df.sample(5)
+# ─────────────────────────────────────────
+
+def get_schema_for_boards(board_ids: list[str]) -> dict:
+    """
+    For each board ID, fetches:
+      - column names and types    (df.columns equivalent)
+      - 5 sample rows             (df.sample(5) equivalent)
+
+    Agent uses this in Call 1 to understand
+    data shape and spot messy patterns before querying.
+
+    Returns:
+        {
+            "Deal Funnel": {
+                "board_id": "123",
+                "columns": [...],
+                "sample_rows": [...]
+            },
+            ...
+        }
+    """
+    query = """
+    query ($boardIds: [ID!]) {
+      boards(ids: $boardIds) {
+        id
+        name
+        columns {
+          id
+          title
+          type
+        }
+        items_page(limit: 5) {
+          items {
+            id
+            name
+            column_values {
+              id
+              text
+              value
+            }
+          }
+        }
+      }
+    }
+    """
+
+    
+    variables = {"boardIds": board_ids}
+    result = run_query(query, variables)
+
+    output = {}
+    for board in result["data"]["boards"]:
+        output[board["name"]] = {
+            "board_id":    board["id"],
+            "columns":     board["columns"],
+            "sample_rows": board["items_page"]["items"]
+        }
+    return output
+
+
+def map_column_ids_to_titles(schema: dict, items: dict) -> dict:
+    """
+    Replaces cryptic column IDs in row data with human-readable titles.
+    Uses the schema fetched in Call 1.
+    
+    Before: { "color_mm13811n": "Mining" }
+    After:  { "Sector": "Mining" }
+    """
+    mapped_output = {}
+
+    for board_name, board_items in items.items():
+        if board_name not in schema:
+            mapped_output[board_name] = board_items
+            continue
+
+        # build id → title lookup from schema
+        id_to_title = {
+            col["id"]: col["title"]
+            for col in schema[board_name]["columns"]
+        }
+
+        mapped_rows = []
+        for item in board_items:
+            mapped_row = {"name": item["name"]}
+            for cv in item["column_values"]:
+                col_title = id_to_title.get(cv["id"], cv["id"])
+                if cv["text"]:  # skip empty
+                    mapped_row[col_title] = cv["text"]
+            mapped_rows.append(mapped_row)
+
+        mapped_output[board_name] = mapped_rows
+
+    return mapped_output
+
+
+# ─────────────────────────────────────────
+# Query Tool — fetch items from one or many boards
+# ─────────────────────────────────────────
+
+def get_items_from_boards(board_ids: list[str], limit: int = 500) -> dict:
+    query = """
+    query ($boardIds: [ID!], $limit: Int) {
+      boards(ids: $boardIds) {
+        id
+        name
+        items_page(limit: $limit) {
+          items {
+            id
+            name
+            column_values {
+              id
+              text
+              value
+            }
+          }
+        }
+      }
+    }
+    """
+    variables = {"boardIds": board_ids, "limit": limit}
+    result    = run_query(query, variables)
+
+    output = {}
+    for board in result["data"]["boards"]:
+        output[board["name"]] = board["items_page"]["items"]
+
+    return output
