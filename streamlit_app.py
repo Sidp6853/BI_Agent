@@ -1,4 +1,10 @@
-# streamlit_app.py
+import streamlit as st
+import os
+
+# DEBUG — remove after fixing
+st.write("GEMINI key:", st.secrets.get("GEMINI_API_KEY", "NOT FOUND"))
+st.write("MONDAY key:", st.secrets.get("MONDAY_API_KEY", "NOT FOUND"))
+st.stop()  # stops app here so nothing else runs
 
 import streamlit as st
 from app.agents.bi_agent import run_agent
