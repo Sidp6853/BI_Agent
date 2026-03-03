@@ -4,6 +4,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import os
+def _get_monday_key():
+    try:
+        import streamlit as st
+        return st.secrets.get("MONDAY_API_KEY") or os.getenv("MONDAY_API_KEY")
+    except Exception:
+        return os.getenv("MONDAY_API_KEY")
+
+MONDAY_API_KEY = _get_monday_key()
 # ─────────────────────────────────────────
 # Auth & Config
 # ─────────────────────────────────────────
@@ -58,16 +67,7 @@ def get_all_boards() -> list[dict]:
     return result["data"]["boards"]
 
 
-def get_available_boards() -> list[dict]:
-    IGNORE_KEYWORDS = ["welcome", "developer"]
-    boards = get_all_boards()
-    usable = [
-        b for b in boards
-        if not any(kw in b["name"].lower() for kw in IGNORE_KEYWORDS)
-    ]
-    if not usable:
-        raise ValueError("No usable boards found in workspace.")
-    return usable
+
 
 
 # ─────────────────────────────────────────
