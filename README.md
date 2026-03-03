@@ -64,7 +64,7 @@ app/monday/client.py — Monday.com GraphQL API v2
 | LLM | Gemini 2.5 Flash | Fast, strong tool-calling, high free quota |
 | Agent Framework | LangGraph | Explicit state graph, clean tool loop |
 | Monday.com | GraphQL API v2 | Direct integration, full control |
-| UI | Streamlit | Zero setup for evaluator, single deployment |
+| UI | Streamlit |Easy and fast setup|
 | Hosting | Streamlit Community Cloud | Public URL, no infra needed |
 
 ---
