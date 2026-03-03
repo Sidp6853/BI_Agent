@@ -28,14 +28,20 @@ logger = logging.getLogger(__name__)
 # LLM Setup
 # ─────────────────────────────────────────
 
-base_model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    api_key=os.getenv("GEMINI_API_KEY"),
-    temperature=0,
-    streaming=False
-)
 
-model_with_tools = base_model.bind_tools(MONDAY_TOOLS)
+_model_with_tools = None
+
+def _get_model():
+    global _model_with_tools
+    if _model_with_tools is None:
+        base_model = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
+            google_api_key=os.getenv("GEMINI_API_KEY"),
+            temperature=0,
+            streaming=False
+        )
+        _model_with_tools = base_model.bind_tools(MONDAY_TOOLS)
+    return _model_with_tools
 
 
 # ─────────────────────────────────────────
@@ -57,7 +63,8 @@ def llm_node(state: AgentState) -> Dict[str, Any]:
     conversation.extend(state["messages"])
 
     logger.info("🤖 Agent thinking...")
-    result = model_with_tools.invoke(conversation)
+
+    result = _get_model().invoke(conversation)
 
     if getattr(result, "tool_calls", None):
         logger.info(f"🔧 Tool calls requested: {[tc['name'] for tc in result.tool_calls]}")
